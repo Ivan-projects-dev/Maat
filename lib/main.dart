@@ -20,11 +20,29 @@ class TasksApp extends StatelessWidget {
   }
 }
 
+enum Recurrence { none, daily, weekly, monthly }
+
 class Task {
   final String title;
   final DateTime? deadline;
+  final Recurrence recurrence;
+  DateTime? nextDue;
 
-  Task({required this.title, this.deadline});
+  Task({
+    required this.title,
+    this.deadline,
+    this.recurrence = Recurrence.none,
+    this.nextDue,
+  });
+
+  Task copyWith({DateTime? nextDue}) {
+    return Task(
+      title: title,
+      deadline: deadline,
+      recurrence: recurrence,
+      nextDue: nextDue,
+    );
+  }
 }
 
 class TasksScreen extends StatefulWidget {
@@ -38,17 +56,36 @@ class TasksScreenState extends State<TasksScreen> {
   final List<Task> tasks = [];
   final List<Task> completedTasks = [];
 
-  void _addTask(String title, DateTime? deadline) {
+  @override
+  void initState() {
+    super.initState();
+    // Start periodic task reappearance check
+    _startReappearanceChecker();
+  }
+
+  void _addTask(String title, DateTime? deadline, Recurrence recurrence) {
     setState(() {
-      tasks.add(Task(title: title, deadline: deadline));
+      tasks.add(Task(
+        title: title,
+        deadline: deadline,
+        recurrence: recurrence,
+        nextDue: _calculateNextDueDate(deadline, recurrence),
+      ));
       _sortTasks();
     });
   }
 
   void _markTaskAsCompleted(int index) {
+    final task = tasks[index];
     setState(() {
-      completedTasks.add(tasks[index]);
-      tasks.removeAt(index);
+      if (task.recurrence == Recurrence.none) {
+        completedTasks.add(task);
+      } else {
+        tasks[index] = task.copyWith(
+          nextDue: _calculateNextDueDate(task.nextDue, task.recurrence),
+        );
+      }
+      tasks.removeWhere((t) => t.nextDue?.isBefore(DateTime.now()) ?? false);
       _sortTasks();
     });
   }
@@ -61,10 +98,47 @@ class TasksScreenState extends State<TasksScreen> {
 
   void _sortTasks() {
     tasks.sort((a, b) {
-      if (a.deadline == null && b.deadline == null) return 0;
-      if (a.deadline == null) return -1; // Tasks without deadlines appear first.
-      if (b.deadline == null) return 1;
-      return a.deadline!.compareTo(b.deadline!);
+      if (a.nextDue == null && b.nextDue == null) return 0;
+      if (a.nextDue == null) return -1;
+      if (b.nextDue == null) return 1;
+      return a.nextDue!.compareTo(b.nextDue!);
+    });
+  }
+
+  DateTime? _calculateNextDueDate(DateTime? currentDate, Recurrence recurrence) {
+    if (currentDate == null) return null;
+    switch (recurrence) {
+      case Recurrence.daily:
+        return currentDate.add(const Duration(days: 1));
+      case Recurrence.weekly:
+        return currentDate.add(const Duration(days: 7));
+      case Recurrence.monthly:
+        return DateTime(
+          currentDate.year,
+          currentDate.month + 1,
+          currentDate.day,
+          currentDate.hour,
+          currentDate.minute,
+        );
+      case Recurrence.none:
+      default:
+        return null;
+    }
+  }
+
+  void _startReappearanceChecker() {
+    Future.delayed(const Duration(minutes: 1), () {
+      setState(() {
+        final now = DateTime.now();
+        for (var i = 0; i < tasks.length; i++) {
+          if (tasks[i].nextDue != null && tasks[i].nextDue!.isBefore(now)) {
+            tasks[i] = tasks[i].copyWith(
+              nextDue: _calculateNextDueDate(tasks[i].nextDue, tasks[i].recurrence),
+            );
+          }
+        }
+      });
+      _startReappearanceChecker();
     });
   }
 
@@ -72,7 +146,7 @@ class TasksScreenState extends State<TasksScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Maat'),
+        title: const Text('Google Tasks Clone'),
         actions: [
           IconButton(
             icon: const Icon(Icons.delete),
@@ -95,58 +169,29 @@ class TasksScreenState extends State<TasksScreen> {
                       return ListTile(
                         leading: Radio<int>(
                           value: index,
-                          groupValue: null, // Set to null since we're not grouping
+                          groupValue: null,
                           onChanged: (_) {
                             _markTaskAsCompleted(index);
                           },
                         ),
                         title: Text(task.title),
-                        subtitle: task.deadline != null
-                            ? Text(
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (task.deadline != null)
+                              Text(
                                 'Deadline: ${DateFormat('yyyy-MM-dd HH:mm').format(task.deadline!)}',
-                              )
-                            : null,
+                              ),
+                            if (task.recurrence != Recurrence.none)
+                              Text(
+                                'Recurring: ${task.recurrence.name.toUpperCase()}',
+                              ),
+                          ],
+                        ),
                       );
                     },
                   ),
           ),
-          if (completedTasks.isNotEmpty)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: Text(
-                    'Completed Tasks:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-                ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: completedTasks.length,
-                  itemBuilder: (context, index) {
-                    final task = completedTasks[index];
-                    return ListTile(
-                      title: Text(
-                        task.title,
-                        style: const TextStyle(
-                          decoration: TextDecoration.lineThrough,
-                        ),
-                      ),
-                      subtitle: task.deadline != null
-                          ? Text(
-                              'Completed: ${DateFormat('yyyy-MM-dd HH:mm').format(task.deadline!)}',
-                            )
-                          : null,
-                    );
-                  },
-                ),
-              ],
-            ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -159,6 +204,7 @@ class TasksScreenState extends State<TasksScreen> {
   void _showAddTaskDialog() {
     String newTask = '';
     DateTime? selectedDeadline;
+    Recurrence selectedRecurrence = Recurrence.none;
 
     showDialog(
       context: context,
@@ -201,6 +247,23 @@ class TasksScreenState extends State<TasksScreen> {
                 },
                 child: const Text('Select Deadline'),
               ),
+              const SizedBox(height: 10),
+              DropdownButton<Recurrence>(
+                value: selectedRecurrence,
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      selectedRecurrence = value;
+                    });
+                  }
+                },
+                items: Recurrence.values.map((recurrence) {
+                  return DropdownMenuItem<Recurrence>(
+                    value: recurrence,
+                    child: Text(recurrence.name.toUpperCase()),
+                  );
+                }).toList(),
+              ),
             ],
           ),
           actions: [
@@ -213,7 +276,7 @@ class TasksScreenState extends State<TasksScreen> {
             TextButton(
               onPressed: () {
                 if (newTask.isNotEmpty) {
-                  _addTask(newTask, selectedDeadline);
+                  _addTask(newTask, selectedDeadline, selectedRecurrence);
                 }
                 Navigator.of(context).pop();
               },
