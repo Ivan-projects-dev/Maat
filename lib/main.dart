@@ -59,7 +59,6 @@ class TasksScreenState extends State<TasksScreen> {
   @override
   void initState() {
     super.initState();
-    // Start periodic task reappearance check
     _startReappearanceChecker();
   }
 
@@ -155,44 +154,52 @@ class TasksScreenState extends State<TasksScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: tasks.isEmpty
-                ? const Center(
-                    child: Text('No tasks yet!'),
-                  )
-                : ListView.builder(
-                    itemCount: tasks.length,
-                    itemBuilder: (context, index) {
-                      final task = tasks[index];
-                      return ListTile(
-                        leading: Radio<int>(
-                          value: index,
-                          groupValue: null,
-                          onChanged: (_) {
-                            _markTaskAsCompleted(index);
-                          },
-                        ),
-                        title: Text(task.title),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (task.deadline != null)
-                              Text(
-                                'Deadline: ${DateFormat('yyyy-MM-dd HH:mm').format(task.deadline!)}',
-                              ),
-                            if (task.recurrence != Recurrence.none)
-                              Text(
-                                'Recurring: ${task.recurrence.name.toUpperCase()}',
-                              ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            if (tasks.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text('No tasks yet!'),
+                ),
+              )
+            else
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: tasks.length,
+                itemBuilder: (context, index) {
+                  final task = tasks[index];
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+                    visualDensity: const VisualDensity(vertical: 4),
+                    leading: SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: Radio<int>(
+                        value: index,
+                        groupValue: null,
+                        onChanged: (_) {
+                          _markTaskAsCompleted(index);
+                        },
+                      ),
+                    ),
+                    title: Text(
+                      task.title,
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: task.deadline != null
+                        ? Text(
+                            'Deadline: ${DateFormat('yyyy-MM-dd HH:mm').format(task.deadline!)}',
+                            style: const TextStyle(fontSize: 16),
+                          )
+                        : null,
+                  );
+                },
+              ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddTaskDialog,
