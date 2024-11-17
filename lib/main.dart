@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 void main() {
   runApp(const TasksApp());
@@ -19,6 +20,13 @@ class TasksApp extends StatelessWidget {
   }
 }
 
+class Task {
+  final String title;
+  final DateTime? deadline;
+
+  Task({required this.title, this.deadline});
+}
+
 class TasksScreen extends StatefulWidget {
   const TasksScreen({super.key});
 
@@ -27,12 +35,13 @@ class TasksScreen extends StatefulWidget {
 }
 
 class TasksScreenState extends State<TasksScreen> {
-  final List<String> tasks = [];
-  final List<String> completedTasks = [];
+  final List<Task> tasks = [];
+  final List<Task> completedTasks = [];
 
-  void _addTask(String task) {
+  void _addTask(String title, DateTime? deadline) {
     setState(() {
-      tasks.add(task);
+      tasks.add(Task(title: title, deadline: deadline));
+      _sortTasks();
     });
   }
 
@@ -40,6 +49,7 @@ class TasksScreenState extends State<TasksScreen> {
     setState(() {
       completedTasks.add(tasks[index]);
       tasks.removeAt(index);
+      _sortTasks();
     });
   }
 
@@ -49,11 +59,20 @@ class TasksScreenState extends State<TasksScreen> {
     });
   }
 
+  void _sortTasks() {
+    tasks.sort((a, b) {
+      if (a.deadline == null && b.deadline == null) return 0;
+      if (a.deadline == null) return -1; // Tasks without deadlines appear first.
+      if (b.deadline == null) return 1;
+      return a.deadline!.compareTo(b.deadline!);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Google Tasks Clone'),
+        title: const Text('Maat'),
         actions: [
           IconButton(
             icon: const Icon(Icons.delete),
@@ -72,15 +91,21 @@ class TasksScreenState extends State<TasksScreen> {
                 : ListView.builder(
                     itemCount: tasks.length,
                     itemBuilder: (context, index) {
+                      final task = tasks[index];
                       return ListTile(
-                        leading: Radio(
+                        leading: Radio<int>(
                           value: index,
-                          groupValue: null,
+                          groupValue: null, // Set to null since we're not grouping
                           onChanged: (_) {
                             _markTaskAsCompleted(index);
                           },
                         ),
-                        title: Text(tasks[index]),
+                        title: Text(task.title),
+                        subtitle: task.deadline != null
+                            ? Text(
+                                'Deadline: ${DateFormat('yyyy-MM-dd HH:mm').format(task.deadline!)}',
+                              )
+                            : null,
                       );
                     },
                   ),
@@ -104,13 +129,19 @@ class TasksScreenState extends State<TasksScreen> {
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: completedTasks.length,
                   itemBuilder: (context, index) {
+                    final task = completedTasks[index];
                     return ListTile(
                       title: Text(
-                        completedTasks[index],
+                        task.title,
                         style: const TextStyle(
                           decoration: TextDecoration.lineThrough,
                         ),
                       ),
+                      subtitle: task.deadline != null
+                          ? Text(
+                              'Completed: ${DateFormat('yyyy-MM-dd HH:mm').format(task.deadline!)}',
+                            )
+                          : null,
                     );
                   },
                 ),
@@ -127,16 +158,50 @@ class TasksScreenState extends State<TasksScreen> {
 
   void _showAddTaskDialog() {
     String newTask = '';
+    DateTime? selectedDeadline;
+
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           title: const Text('Add Task'),
-          content: TextField(
-            onChanged: (value) {
-              newTask = value;
-            },
-            decoration: const InputDecoration(hintText: 'Enter task'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                onChanged: (value) {
+                  newTask = value;
+                },
+                decoration: const InputDecoration(hintText: 'Enter task'),
+              ),
+              const SizedBox(height: 10),
+              ElevatedButton(
+                onPressed: () async {
+                  final pickedDate = await showDatePicker(
+                    context: context,
+                    initialDate: DateTime.now(),
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime(2100),
+                  );
+                  if (pickedDate != null) {
+                    final pickedTime = await showTimePicker(
+                      context: context,
+                      initialTime: TimeOfDay.now(),
+                    );
+                    if (pickedTime != null) {
+                      selectedDeadline = DateTime(
+                        pickedDate.year,
+                        pickedDate.month,
+                        pickedDate.day,
+                        pickedTime.hour,
+                        pickedTime.minute,
+                      );
+                    }
+                  }
+                },
+                child: const Text('Select Deadline'),
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -148,7 +213,7 @@ class TasksScreenState extends State<TasksScreen> {
             TextButton(
               onPressed: () {
                 if (newTask.isNotEmpty) {
-                  _addTask(newTask);
+                  _addTask(newTask, selectedDeadline);
                 }
                 Navigator.of(context).pop();
               },
